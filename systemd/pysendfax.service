@@ -1,0 +1,12 @@
+[Unit]
+Description=Sending FAX daemon
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/pysendfax
+WorkingDirectory=/usr/local/lib/pysendfax
+ExecStart=/usr/local/lib/pysendfax/uploader.py ${HOST} ${PORT} ${ENDPOINT} ${CONTEXT}
+
+[Install]
+WantedBy=multi-user.target
