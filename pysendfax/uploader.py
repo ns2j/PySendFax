@@ -1,91 +1,17 @@
 #! /usr/bin/python3
 
-from bottle import route, run, template, request
+from bottle import Bottle, default_app, static_file, route, run, template, request, response
+import os, sys
+import html, manifest, sw
+
+@route('/static/<file_path:path>')
+def server_static(file_path):
+  return static_file(file_path, root=os.path.dirname(__file__) + '/static/')
+
 
 @route('/')
 def home():
-  return template('''
-<!DOCTYPE html>
-<html lang="ja">
-  <head>
-    <title>fax送信</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <script>
-    function init() {
-      //document.querySelector('#dropable').addEventListener('drop', (event) => alert('ok'))
-      console.log(document.querySelector('#dropable'))
-    }
-    function dropHandler(ev) {
-      console.log(ev)
-      const container = new DataTransfer()
-      if (ev.dataTransfer.items) {
-        [...ev.dataTransfer.items].forEach((item, i) => {
-          console.log(item)
-          const file = item.getAsFile()
-          console.log(file)
-          container.items.add(file)
-        })
-        document.querySelector('#fileinput').files = container.files
-	ev.preventDefault()
-      } else {
-        [...ev.dataTransfer.files].forEach((file, i) => {
-          console.log(file)
-        })
-      }
-      ev.preventDefault()
-    }
-    function dragoverHandler(ev) {
-      ev.preventDefault()
-    }
-  </script>
-  <body onload="init()">
-    <form action="./send" method="post" enctype="multipart/form-data">
-      <div>
-        <label>fax番号: </label>
-        <input type="text" id="number" name="number">
-      </div>
-      <div>
-        <label>自分のemail</label>
-        <input type="text" id="email" name="email">
-      </div>
-      <div>
-        <label>品質</label>
-        <select id="qualiity" name="quality">
-          <option>normal</option>
-          <option>fine</option>
-          <option>super</option>
-        </select>
-      </div>
-      <div>
-        <label>pdfファイル: </label>
-        <input id="fileinput" type="file" id="file" name="file" multiple>
-      </div>
-      <div id="dropable" style="width: 100%; height: 10em; background-color: #aaaaaa" ondrop="dropHandler(event)" ondragover="dragoverHandler(event)">
-         <h1>ここにファイルドロップ</h1>
-      </div>
-      <input type="submit" value="fax送信">
-    </form>
-  </body>
-
-</html>
-''')
-
-ERROR_PAGE =  '''
-<!DOCTYPE html>
-<html lang="ja">
-  <head>
-    <title>fax送信でエラー</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />  </head>
-  <body>
-<% for m in messages: %>
-  {{m}}<br/>
-<% end %>
-  <a href="./">戻る</a>
-
-  </body>
-</html>
-'''
+  return template(html.MAIN_HTML, files=None)
 
 
 @route('/send', method='POST')
@@ -94,53 +20,67 @@ def send():
 
   print(request.forms.number)
   if (re.match(r'^([0-9]|-)+$', request.forms.number) == None):
-    return template(ERROR_PAGE, messages = ['不正な電話番号'])
+    return template(html.ERROR_PAGE, messages = ['不正な電話番号'])
 
-  files = request.files.getall('file')
-  print(files)
+  shares = request.forms.getall('share')
+  print(shares, file=sys.stderr)
+  uploads = request.files.getall('file')
+  print(uploads, file=sys.stderr)
+  uploads = list(filter(lambda x: True if x.raw_filename else False, uploads))
+  print(uploads, file=sys.stderr)
   print(context)
   print(endpoint)
   c = caller.Caller(endpoint, context, 
          request.forms.number.replace('-', ''),
-         request.forms.email, files, quality = request.forms.quality)
+         request.forms.email,
+	 shares, uploads,
+	 request.forms.quality)
   try:
     #c.call(dry_run = True)
     c.call()
   except Exception as e:
-    return template(ERROR_PAGE, messages = f"Error: {e=}".split('\n'))
+    return template(html.ERROR_PAGE, messages = f"Error: {e=}".split('\n'))
 
-  return template('''
-<!DOCTYPE html>
-<html lang="ja">
-  <head>
-    <title>fax送信試行</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />  </head>
-  <body>
-  fax送信試行します。<br>
-  e-mailを確認してください。e-mailアドレスは、{{email}}です。<br>
-  <a href="./">戻る</a>
-
-  </body>
-</html>
-''', email = request.forms.email)
+  return template(html.SEND_HTML, email = request.forms.email)
   
+@route('/file-collector', method='POST')
+def colect_file():
+  uploads = request.files.getall('images')
+  print(vars(request.files), file=sys.stderr)
+  print(uploads, file=sys.stderr)
+  from agent import Agent
+  files = [ f for f in Agent.write_upload_file_to_temp(uploads) if f ]
+  print(uploads, file=sys.stderr)
+  return template(html.MAIN_HTML, files = files)
+
+@route('/manifest')
+def get_manifest():
+  return template(manifest.MANIFEST)
+
+@route('/sw.js')
+def get_sw_js():
+  response.content_type='text/javascript'
+  return template(sw.SW_JS)
 
 @route('/hello/<name>')
 def greet(name):
   return template('<b>Hello {{name}}</b>!', name=name)
 
+if __name__ == '__main__':
+  import argparse
+  parser = argparse.ArgumentParser()
+  parser.add_argument("host")
+  parser.add_argument("port")
+  parser.add_argument("endpoint")
+  parser.add_argument("context")
+  parser.add_argument("-a", "--app", default = "/")
 
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument("host")
-parser.add_argument("port")
-parser.add_argument("endpoint")
-parser.add_argument("context")
+  args = parser.parse_args()
 
-args = parser.parse_args()
-
-context = args.context
-endpoint = args.endpoint
-
-run(host=args.host, port=args.port)
+  context = args.context
+  endpoint = args.endpoint
+   
+  root = Bottle()
+  root.mount(args.app, default_app())
+  root.run(host=args.host, port=args.port)
 

@@ -2,8 +2,9 @@ TEMP_DIR = '/tmp'
 TIFF_DIR = '/var/spool/asterisk'
 OUTGOING_DIR = '/var/spool/asterisk/outgoing'
 
+import writer, os, sys
+
 class Agent:
-    import writer, os, time
 
     OUTGOING_MESSAGE = '''Channel: PJSIP/{channel}
 WaitTime: 30
@@ -19,38 +20,49 @@ Set: REPLYTO={replyto}
 Set: SUBJECT={subject}
 '''
     
-    def __init__(self, src_files, quality='normal', file_upload_objects = None):
+    def __init__(self, src_files = [], file_upload_objects = [], quality = 'normal'):
+        import time
         self.src_files = src_files
+        self.file_upload_objects = file_upload_objects
         self.quality = quality
-        self.basename = str(int(self.time.time()))
-        print(file_upload_objects)
+        self.basename = str(int(time.time()))
         if (file_upload_objects):
-            self.src_files = [ f for f in self._generate_src_files(file_upload_objects) if f]
-    def _generate_src_files(self, file_upload_objects):
+            self.src_files += [ f for f in self._generate_src_files() if f]
+        print(self.src_files, file=sys.stderr)
+
+    def write_upload_file_to_temp(file_upload_objects):
         for i, fuo in enumerate(file_upload_objects):
-            print(fuo)
-            name, ext = self.os.path.splitext(fuo.raw_filename)
-            filename = self._get_filename_without_extension(TEMP_DIR) + str(i) + ext
+            dst_file = TEMP_DIR + "/" + fuo.raw_filename
+            if os.path.exists(dst_file):
+              os.remove(dst_file)
+            fuo.save(dst_file)
+            yield dst_file
+      
+    def _generate_src_files(self):
+        for i, fuo in enumerate(self.file_upload_objects):
+            print(vars(fuo), file=sys.stderr)
+            name, ext = os.path.splitext(fuo.raw_filename)
+            filename = self._get_filename_without_extension(TEMP_DIR) + str(i) + '_fuo' + ext
             fuo.save(filename)
+            print(filename, file=sys.stderr)
             yield filename
             
             
     def _get_filename_without_extension(self, dir):
-        return self.os.path.join(dir, self.basename)
+        return os.path.join(dir, self.basename)
         
-    def _generatewrited_pdf_files(self):
+    def _generate_written_pdf_files(self):
         for i, src_file in enumerate(self.src_files):
             dst_file = self._get_filename_without_extension(TEMP_DIR) + str(i) + '.pdf'
-            i2pw = self.writer.ImageFileToPdfFileWriter(src_file, dst_file)
+            i2pw = writer.ImageFileToPdfFileWriter(src_file, dst_file)
             i2pw.write()
             yield dst_file
             
-            
     def write_tiffg3_file(self):
-        pdf_files = [f for f in self._generatewrited_pdf_files() if f]
+        pdf_files = [f for f in self._generate_written_pdf_files() if f]
 
         tiff_file = self._get_filename_without_extension(TIFF_DIR) + '.outgoing.tiff'
-        ps2g3w = self.writer.PdfFilesToTiffG3FileWriter(self.quality,
+        ps2g3w = writer.PdfFilesToTiffG3FileWriter(self.quality,
                                                         pdf_files, tiff_file)
         ps2g3w.write()
         return tiff_file
