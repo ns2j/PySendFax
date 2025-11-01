@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 EnvironmentFile=-/etc/default/pysendfax
 WorkingDirectory=/usr/local/lib/pysendfax
-ExecStart=/usr/local/lib/pysendfax/uploader.py ${HOST} ${PORT} ${ENDPOINT} ${CONTEXT}
+ExecStart=/usr/local/lib/pysendfax/uploader.py ${HOST} ${PORT} ${ENDPOINT} ${CONTEXT} -a ${APP}
 
 [Install]
 WantedBy=multi-user.target
